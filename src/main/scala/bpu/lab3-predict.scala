@@ -19,19 +19,15 @@ class Lab3BrPredictor(
   // Initialize all tables
   // -----------------------------------------------------
 
-  val lht = Reg(
-    init = Vec(Seq.fill(1024) { UInt("b00", width = history_length) }))
+  val lht = Mem(1024, UInt(history_length.W))
 
-  val lpt = Reg(
-    init = Vec(Seq.fill(math.pow(2, history_length).toInt) { UInt("b000", width = 3) }))
+  val lpt = Mem(1 << history_length, UInt(3.W))
 
-  val pathhist = Reg(init = UInt("b00", width = history_length))
+  val pathhist = Reg(UInt(width = history_length))
 
-  val gpt = Reg(
-    init = Vec(Seq.fill(math.pow(2, history_length).toInt) { UInt("b00", width = 2) }))
+  val gpt = Mem(1 << history_length, UInt(2.W))
 
-  val cpt = Reg(
-    init = Vec(Seq.fill(math.pow(2, history_length).toInt) { UInt("b00", width = 2) }))
+  val cpt = Mem(1 << history_length, UInt(2.W))
 
   val stall = !io.resp.ready
 
@@ -42,14 +38,14 @@ class Lab3BrPredictor(
   val pc = io.req_pc
   val lht_idx = pc >> 2
   val localhist = RegEnable(lht(lht_idx), !stall)
-  val localpred = lpt(localhist)
+  val localpred = lpt.read(localhist)
 
   // -----------------------------------------------------
   // Predict branch direction
   // -----------------------------------------------------
   
-  val globalpred = gpt(pathhist)
-  val choicepred = cpt(pathhist)
+  val globalpred = gpt.read(pathhist)
+  val choicepred = cpt.read(pathhist)
   io.resp.bits.takens := Mux(choicepred(1), globalpred(1), localpred(2))
   io.resp.valid := !this.disable_bpd
   val info = Cat(lht_idx, pathhist)
@@ -68,10 +64,10 @@ class Lab3BrPredictor(
   // Get previous states from tables
   // -----------------------------------------------------
 
-  val commit_localhist = lht(commit_lht_idx)
-  val commit_localpred = lpt(commit_localhist)
-  val commit_globalpred = gpt(commit_pathhist)
-  val commit_choicepred = cpt(commit_pathhist)
+  val commit_localhist = lht.read(commit_lht_idx)
+  val commit_localpred = lpt.read(commit_localhist)
+  val commit_globalpred = gpt.read(commit_pathhist)
+  val commit_choicepred = cpt.read(commit_pathhist)
 
   // -----------------------------------------------------
   // Calculate update values
@@ -95,10 +91,10 @@ class Lab3BrPredictor(
   // -----------------------------------------------------
 
   when (update_en) {
-    lht(commit_lht_idx) := commit_localhist_update
-    lpt(commit_localhist) := commit_localpred_update
-    gpt(commit_pathhist) := commit_globalpred_update
-    cpt(commit_pathhist) := commit_choicepred_update
-    pathhist := Cat(pathhist(history_length - 2, 0), commit_taken)
+    lht.write(commit_lht_idx, commit_localhist_update)
+    lpt.write(commit_localhist, commit_localpred_update)
+    gpt.write(commit_pathhist, commit_globalpred_update)
+    cpt.write(commit_pathhist, commit_choicepred_update)
+    pathhist := (pathhist << 1) + commit_taken
   }
 }
